@@ -21,7 +21,7 @@ function domain_path_rewrite_url_inbound_alter(&$path, $original_path, $path_lan
   $domain_key = empty($_domain['machine_name']) ? domain_load($_domain['domain_id'])['machine_name'] : $_domain['machine_name'];
   $redirect_source = $domain_key . ':' . ($original_path ? $original_path : '<front>');
 
-  if (redirect_load_by_source($redirect_source)) {
+  if (module_exists('redirect') && redirect_load_by_source($redirect_source)) {
     $path = $redirect_source;
   }
 }
