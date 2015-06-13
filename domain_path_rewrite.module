@@ -1,0 +1,70 @@
+<?php
+
+/**
+ * Implements hook_init().
+ */
+function domain_path_rewrite_init() {
+  if ($domain_path = _domain_path_rewrite_domain_path(current_path())) {
+    global $_domain;
+
+    if (!($_domain['domain_id'] == $domain_path['domain_id'] && request_path() == $domain_path['path'])) {
+      drupal_goto($domain_path['url'], array(), 301);
+    }
+  }
+}
+
+/**
+ * Implements hook_url_inbound_alter().
+ */
+function domain_path_rewrite_url_inbound_alter(&$path, $original_path, $path_language) {
+  global $_domain;
+  $domain_key = empty($_domain['machine_name']) ? domain_load($_domain['domain_id'])['machine_name'] : $_domain['machine_name'];
+  $redirect_source = $domain_key . ':' . ($original_path ? $original_path : '<front>');
+
+  if (redirect_load_by_source($redirect_source)) {
+    $path = $redirect_source;
+  }
+}
+
+/**
+ * Implements hook_url_outbound_alter().
+ */
+function domain_path_rewrite_url_outbound_alter(&$path, &$options, $original_path) {
+  if ($domain_path = _domain_path_rewrite_domain_path($original_path)) {
+    $path = $domain_path['url'];
+    $options['external'] = strpos($path, '//') !== FALSE;
+  }
+}
+
+/**
+ * Helper: Returns domain path by a given source.
+ */
+function _domain_path_rewrite_domain_path($source) {
+  // Use the advanced drupal_static() pattern, since this is called very often.
+  static $drupal_static_fast;
+  if (!isset($drupal_static_fast)) {
+    $drupal_static_fast['cache'] = &drupal_static(__FUNCTION__);
+  }
+  $cache = &$drupal_static_fast['cache'];
+
+  if (!isset($cache)) {
+    $domains = db_select('domain')
+      ->fields('domain')
+      ->execute()
+      ->fetchAllAssoc('domain_id');
+    $paths = db_select('domain_path')
+      ->fields('domain_path')
+      ->execute()
+      ->fetchAll();
+    foreach ($paths as $row) {
+      $path = $row->alias == '<front>' ? '' : $row->alias;
+      $cache[$row->source] = array(
+        'domain_id' => $row->domain_id,
+        'path' => $path,
+        'url' => $domains[$row->domain_id]->scheme . '://' . $domains[$row->domain_id]->subdomain . ($path ? '/' . $path : ''),
+      );
+    }
+  }
+
+  return isset($cache[$source]) ? $cache[$source] : NULL;
+}

@@ -1,0 +1,6 @@
+name = Domain Path Rewrite
+description = Auto-rewriting and redirection for Domain Path.
+package = Domain Access
+core = 7.x
+
+dependencies[] = domain_path
