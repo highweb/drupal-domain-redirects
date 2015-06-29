@@ -18,7 +18,14 @@ function domain_path_rewrite_init() {
  */
 function domain_path_rewrite_url_inbound_alter(&$path, $original_path, $path_language) {
   global $_domain;
-  $domain_key = empty($_domain['machine_name']) ? domain_load($_domain['domain_id'])['machine_name'] : $_domain['machine_name'];
+
+  if (empty($_domain['machine_name'])) {
+    $domain = domain_load($_domain['domain_id']);
+    $domain_key = $domain['machine_name'];
+  }
+  else {
+    $domain_key = $_domain['machine_name'];
+  }
   $redirect_source = $domain_key . ':' . ($original_path ? $original_path : '<front>');
 
   if (module_exists('redirect') && redirect_load_by_source($redirect_source)) {
