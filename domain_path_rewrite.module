@@ -39,7 +39,7 @@ function domain_path_rewrite_url_inbound_alter(&$path, $original_path, $path_lan
 function domain_path_rewrite_url_outbound_alter(&$path, &$options, $original_path) {
   if ($domain_path = _domain_path_rewrite_domain_path($original_path)) {
     $path = $domain_path['url'];
-    $options['external'] = strpos($path, '//') !== FALSE;
+    $options['external'] = $domain_path['external'];
   }
 }
 
@@ -55,6 +55,8 @@ function _domain_path_rewrite_domain_path($source) {
   $cache = &$drupal_static_fast['cache'];
 
   if (!isset($cache)) {
+  	global $_domain;
+
     $domains = db_select('domain')
       ->fields('domain')
       ->execute()
@@ -65,10 +67,12 @@ function _domain_path_rewrite_domain_path($source) {
       ->fetchAll();
     foreach ($paths as $row) {
       $path = $row->alias == '<front>' ? '' : $row->alias;
+      $external = $row->domain_id != $_domain['domain_id'];
       $cache[$row->source] = array(
         'domain_id' => $row->domain_id,
         'path' => $path,
-        'url' => $domains[$row->domain_id]->scheme . '://' . $domains[$row->domain_id]->subdomain . ($path ? '/' . $path : ''),
+        'external' => $external,
+        'url' => $external ? $domains[$row->domain_id]->scheme . '://' . $domains[$row->domain_id]->subdomain . ($path ? '/' . $path : '') : $path,
       );
     }
   }
