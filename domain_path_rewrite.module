@@ -6,7 +6,6 @@
 function domain_path_rewrite_init() {
   if ($domain_path = _domain_path_rewrite_domain_path(current_path())) {
     global $_domain;
-
     if (!($_domain['domain_id'] == $domain_path['domain_id'] && request_path() == $domain_path['path'])) {
       drupal_goto($domain_path['url'], array(), 301);
     }
@@ -27,8 +26,8 @@ function domain_path_rewrite_url_inbound_alter(&$path, $original_path, $path_lan
     $domain_key = $_domain['machine_name'];
   }
   $redirect_source = $domain_key . ':' . ($original_path ? $original_path : '<front>');
-
-  if (module_exists('redirect') && redirect_load_by_source($redirect_source)) {
+  $current_langcode = !empty($path_language) ? $path_language : $GLOBALS['language']->language;
+  if (module_exists('redirect') && redirect_load_by_source($redirect_source, $current_langcode)) {
     $path = $redirect_source;
   }
 }
@@ -37,25 +36,32 @@ function domain_path_rewrite_url_inbound_alter(&$path, $original_path, $path_lan
  * Implements hook_url_outbound_alter().
  */
 function domain_path_rewrite_url_outbound_alter(&$path, &$options, $original_path) {
-  if ($domain_path = _domain_path_rewrite_domain_path($original_path)) {
+  global $language;
+  $path_language = (!empty($options['language'])) ? $options['language']->language : $language->language;
+  if ($domain_path = _domain_path_rewrite_domain_path($original_path, $path_language)) {
     $path = $domain_path['url'];
     $options['external'] = $domain_path['external'];
+    if (!empty($domain_path['language'])) {
+      $options['language'] = $domain_path['language'];
+    }
   }
 }
 
 /**
  * Helper: Returns domain path by a given source.
  */
-function _domain_path_rewrite_domain_path($source) {
+function _domain_path_rewrite_domain_path($source, $path_language = NULL) {
   // Use the advanced drupal_static() pattern, since this is called very often.
   static $drupal_static_fast;
   if (!isset($drupal_static_fast)) {
     $drupal_static_fast['cache'] = &drupal_static(__FUNCTION__);
   }
   $cache = &$drupal_static_fast['cache'];
-
+  global $_domain, $language;
+  $path_language = !empty($path_language) ? $path_language : $language->language;
+  $source_key = $source . ':' . $_domain['domain_id'] . ':' . $path_language;
+  $source_und_key = $source . ':' . $_domain['domain_id'] . ':' . LANGUAGE_NONE;
   if (!isset($cache)) {
-  	global $_domain;
 
     $domains = db_select('domain')
       ->fields('domain')
@@ -65,17 +71,41 @@ function _domain_path_rewrite_domain_path($source) {
       ->fields('domain_path')
       ->execute()
       ->fetchAll();
+    $language_list = language_list();
     foreach ($paths as $row) {
       $path = $row->alias == '<front>' ? '' : $row->alias;
+      $url = $path;
       $external = $row->domain_id != $_domain['domain_id'];
-      $cache[$row->source] = array(
+      if (drupal_multilingual() &&
+        variable_get('locale_language_negotiation_url_part', LOCALE_LANGUAGE_NEGOTIATION_URL_PREFIX) == LOCALE_LANGUAGE_NEGOTIATION_URL_PREFIX) {
+        $path = $row->language . '/' . $path;
+      }
+      $cache[$row->source . ':' . $row->domain_id . ':' . $row->language] = array(
         'domain_id' => $row->domain_id,
         'path' => $path,
         'external' => $external,
-        'url' => $external ? $domains[$row->domain_id]->scheme . '://' . $domains[$row->domain_id]->subdomain . ($path ? '/' . $path : '') : $path,
+        'url' => $external ? $domains[$row->domain_id]->scheme . '://' . $domains[$row->domain_id]->subdomain . ($url ? '/' . $url : '') : $url,
+        'language' => isset($language_list[$row->language]) ? $language_list[$row->language] : NULL,
       );
     }
   }
+  if (isset($cache[$source_key])) {
+    // Returns redirect for path on current domain with current language.
+    return  $cache[$source_key];
+  }
+  elseif (isset($cache[$source_und_key])){
+    // Returns redirect for path on current domain with language none.
+    return $cache[$source_und_key];
+  }
 
-  return isset($cache[$source]) ? $cache[$source] : NULL;
+  $pattern = '/' . str_replace('/', '\/', $source) . ':.+:[' . $path_language .'|' .LANGUAGE_NONE . ']/';
+  if (is_array($cache)) {
+    $keys = preg_grep($pattern,array_keys($cache));
+    if ($keys) {
+      $key = reset($keys);
+      // Returns redirect for path on other domain with current language or language none.
+      return $cache[$key];
+    }
+  }
+  return FALSE;
 }
